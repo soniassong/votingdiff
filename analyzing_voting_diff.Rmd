@@ -1,0 +1,247 @@
+---
+title: "Analyzing Voting Difficulty"
+author: "Sonia Song, Kenneth Hahn, Mei Qu"
+subtitle: "Lab 1: Datasci 203" 
+output:
+  pdf_document:
+    toc: yes
+    fig_caption: yes
+  bookdown::pdf_document2:
+    number_sections: yes
+    toc: yes
+    output:
+---
+
+```{=tex}
+\newpage
+\setcounter{page}{1}
+```
+```{r Load packages and set options, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(knitr)
+library(kableExtra)
+options(tinytex.verbose = TRUE)
+knitr::opts_chunk$set(echo=FALSE, message=FALSE)
+```
+
+```{r Load data, include=FALSE}
+raw_data <- read_csv("./anes_pilot_2022_csv_20221214/anes_pilot_2022_csv_20221214.csv")
+nrow(data)
+data <- raw_data[!is.na(raw_data$weight) & raw_data$weight != "", ]
+nrow(data)
+```
+
+# Importance and Context
+
+Voter turnouts in U.S. elections have historically been below two thirds of the eligible voting population. With about 66% of the eligible voting population turnout, 2020 presidential election saw one of the highest rate for any national election since 1900. \footnote{https://www.pewresearch.org/politics/2023/07/12/voter-turnout-2018-2022/}
+
+It is important to note that voters don’t vote consistently along the party lines over time or across issues, which increases the unpredictability of election outcomes. Given the rising political divide in the U.S., any voting irregularities can potentially create an outsized effect on election outcomes. One of those variables is difficulty of voting.
+
+Our analysis seeks to answer the below research question using statistical methods:
+
+```{=tex}
+\begin{quote}
+  \textit{Do Democratic voters or Republican voters experience more difficulty voting? }
+\end{quote}
+```
+It is critical to understand whether there is any systematic difference in how difficult it is to vote among Democrat and Republican voters for fair report and analysis of election results. The additional transparency can increase public confidence in elections. Moreover, further investigation of the underlying drivers of voting difficulty can provide valuable insights for improving political and civic engagement.
+
+```{r Classify voters, include=FALSE}
+data <- data %>% filter((reg == 1 | reg == 2) | votehard != -1)
+nonVoters = data %>% filter(reg == 3 & votehard == -1)
+nrow(data)
+nrow(nonVoters)
+```
+
+```{r Classify voters by democrat or republican, include=FALSE}
+# Democrat if they identified as democrat or lean towards democrat
+dem <- data$pid1d == 1 |  data$pid1r == 1 |  data$pidlean == 2
+rep <- data$pid1d == 2 |  data$pid1r == 2 |  data$pidlean == 1
+data$party <- if_else(dem, 'Democrat',
+                      if_else(rep, 'Republican',NA))
+
+#Check number of data points in each category
+print(paste('Number of Democrat Voters: ', sum(na.omit(data$party == 'Democrat'))))
+print(paste('Number of Republican Voters: ', sum(na.omit(data$party == 'Republican'))))
+print(paste('Number of Independent/Other Voters: ',sum(is.na(data$party))))
+```
+
+# Data and Methodology
+
+Our analysis uses the American National Election Studies (ANES) 2022 Pilot Study dataset. This is an observational dataset based on sample respondents collected from YouGov to test questions for potential inclusion in the 2024 time series study and to understand public opinion after the 2022 midterm elections. There are a total of `r nrow(raw_data)` cases in the study. We removed 85 unweighted cases not selected by the sample matching procedure, which the study recommends excluding for making any inferences about the general population.
+
+We define voters as those who are registered to vote (responded 1 or 2 to `reg`) or those that answered the "how difficult was it to vote" question (response to `votehard` was not equal to -1, or a skipped answer). We used an "or" statement because there could be voters who are not currently registered to vote but voted in the November 8th election and they should be accounted for in our analysis. We note from the documentation that only respondents who definitely voted or probably voted received the `votehard` question. By defining voters as such, we realize we may miss responders who say they didn’t register to vote, answered that they voted or likely voted in the November 8th election, but then skipped the `votehard` question. However, we observed that there were no respondents in this category, making our definition holistic.
+
+To differentiate a Democrat from a Republican voter, we recognize that the survey generates a `rand_pid` (a random integer value) from 1-3 for each respondent. Respondents who get assigned a `rand_pid` of 1 or 3 receive question `pid1d` and respondents who get assigned a `rand_pid` of 2 receive `pid1r`. Both ask the question "Generally speaking, do you usually think of yourself as a Democrat, a Republican, an independent, or what?" but with different phrasing of the questions and answers. We also see a question `pidlean` asking respondents which party they are closer to if they stated they were "Independent", "Something else", or skipped the earlier question. Therefore, we categorized Democrats as those who responded "Democrat" to question `pid1d`, `pid1r` or `pidlean` and Republicans as those who responded "Republican" to those same questions, resulting in `r nrow(data)` responses. We considered using variable `pid_x` instead in our definition which is on a scale from 1-7 from "Strong Democrat" to "Strong Republican", but ultimately chose not to use this variable as we didn’t see any documentation of where this variable came from in the Questionnaire Specifications. We also decided not to try to further categorize those who hadn’t been categorized as we shouldn’t make the unnecessary assumption that their political views or who they elected and would elect for president reflects their political affiliation.
+
+```{r Determine difficulty voting, include=FALSE}
+# divide the data into 2 subgroups by democrat and republican and filter for data with only Democrat and Republican
+
+party_data <- data[!is.na(data$party) & data$votehard != -1,]
+#Generate data for the test, removing legitimate skip "-1" as it does not indicate whether or not the vote experiences any difficulty
+dem_data_votehard <- subset(party_data, party_data$party == "Democrat")
+rep_data_votehard <- subset(party_data, party_data$party == "Republican")
+```
+
+The survey asks the respondents “How difficult was it for you to vote?” (also known as `votehard`) with 5 choices ranging from “Not difficult at all” (1) to “Extremely difficult” (5). Once we filtered the data for Democratic and Republican voters, we used the `votehard` ranking to conduct our statistical test to test the null hypothesis, as this variable is directly applicable to the research question at hand. After removing anyone who is not a Democrat or Republican and removing those who did not answer the `votehard` question (a response of -1), we remain with `r nrow(party_data)` rows.
+
+The sample test we choose is the Wilcoxon rank-sum test. The data is not paired as each surveyee has their own individual score. We believe that this is the most appropriate test as the dataset satisfies the following assumptions for the Wilcoxon rank-sum test: 1. The data is I.I.D. because one surveyor's answer does not depend on the other and both groups are pulled from the same distribution of surveyors 2. Data is ordinal and not metric because intervals are different from person to person, e.g. the difference between a 4 (very difficult) to a 5 (extremely difficult) will be different from one surveyee to the next. Because the data is ordinal, then it must also be non-parametric.
+
+Given that the data is at least ordinal and I.I.D., we must use the Hypothesis of Comparisons to define our null hypothesis:
+
+```{=tex}
+\begin{quote}
+  \textbf{Null Hypothesis:} \textit{The probability of Democrat voters experiencing voting difficulty being greater than Republican voters is the same as the probability of Democrat voters experiencing voting difficulty being less than Republican voters.}
+\end{quote}
+```
+We will be utilizing a two-tailed Wilcoxon Rank-Sum test because a one tailed test will not only make it easier to reject the null hypothesis but a one tailed test also assumes that the opposite case cannot occur, which in this scenario either probability can be just as likely to occur.
+
+As a result our alternative hypothesis is as follows:
+
+```{=tex}
+\begin{quote}
+  \textbf{Alternate Hypothesis:} \textit{The probability of Democrat voters experiencing voting difficulty being greater than Republican voters is not equal to the probability of Democrat voters experiencing voting difficulty being less than Republican voters.}
+\end{quote}
+```
+# Results
+
+```{r Get breakdown of voters and their votehard score, echo = FALSE}
+
+overall_summary_by_party <- party_data[,c('party','votehard')] %>%
+  group_by(party) %>%
+  summarise(
+    Count_votehard = n(),
+    Mean_votehard = mean(votehard),
+    Standard_Deviation_votehard = sd(votehard)
+  )
+
+kable(overall_summary_by_party,format='latex',booktabs=TRUE,caption='Votehard Summary Table by Party')%>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+
+
+```
+
+Table 1 above shows the results of filtering our dataset for only Democratic and Republican voters. The table portrays that there are `r Reduce("-",overall_summary_by_party$Count_votehard)` more Democrat voters than Republican voters and that Democrats have an average `votehard` score that is `r round(Reduce("-",overall_summary_by_party$Mean_votehard)*100,2)`% higher than Republicans. Because this data is ordinal, we cannot directly compare the means of the two groups and we conducted the Wilcoxon Rank-Sum test with the code below.
+
+```{r Wilcoxon rank-sum test, echo=TRUE}
+results <- wilcox.test(dem_data_votehard$votehard, 
+                       rep_data_votehard$votehard, alternative = "two.sided")
+```
+
+After performing the Wilcoxon rank-sum test, we concluded that the probabilities are not equal (W = `r results$statistic`, p = `r results$p.value`). This result indicates that the probability that a Democrat has more difficulty voting than a Republican is not equal to the probability that a Democrat has less difficulty voting than a Republican. Figure 1 delineates the differences between the two survey groups and how they answered the question of how difficult voting was for them. We calculated by the percentage of the respective party that answered each of the categories for votehard, since there are more Democrat voters who answered the question than Republican voters (`r nrow(dem_data_votehard)` Democrat voters and `r nrow(rep_data_votehard)` Republican voters).
+
+```{r Determine Difficulty Bar Chart Calculations, include=FALSE}
+# get only the party and votehard scores
+party_data_difficulty <- party_data[,c('votehard','party')]
+
+# calculate the total count in each party
+total_count <- party_data_difficulty %>%
+  group_by(party) %>%
+  summarise(
+    count = n()
+  )
+
+n_democrats <- as.integer(total_count[total_count$party == 'Democrat','count'])
+n_republicans <- as.integer(total_count[total_count$party == 'Republican','count'])
+
+# look at summary stats of party data 
+# use total_count to create a new column percentage_score that gets the number of count_votehard and divides by the total_count of each respective party
+# percentage_score is calculated to remove the fact that there are more democrats than republicans in this dataset.
+summary_by_party <- party_data_difficulty %>%
+  group_by(party,votehard) %>%
+  summarise(
+    mean_votehard = mean(votehard),
+    median_votehard = median(votehard),
+    count_votehard = n(),
+    std_votehard = sd(votehard),
+    .groups = 'drop_last'
+  ) %>%
+  left_join(total_count, by = 'party') %>%
+  mutate(percentage_score=count_votehard/count * 100)
+
+percent_democrats_not_difficult <- as.integer(summary_by_party[(summary_by_party$party == 'Democrat') & (summary_by_party$votehard == 1),'percentage_score'])
+percent_republicans_not_difficult <- as.integer(summary_by_party[(summary_by_party$party == 'Republican') & (summary_by_party$votehard == 1),'percentage_score'])
+
+print(summary_by_party)
+
+summary_by_party$votehard_string <- as.character(summary_by_party$votehard)
+
+votehard_label <- c(
+  '1' = 'Not difficult at all',
+  '2' = 'A little difficult',
+  '3' = 'Moderately difficult',
+  '4' = 'Very difficult',
+  '5' = 'Extremely difficult'
+)
+```
+
+```{r Determine Difficulty Bar Chart, fig.cap='Percentage of Respective Party that Answered \"votehard\" from 1-5', fig.width=8, fig.height=2}
+# Creates a barplot that compares the two parties based on the percentage of each respective party and what score they voted for from 1 to 5.
+ggplot(summary_by_party) + 
+  aes(x = votehard_string, y = percentage_score, fill = party) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  labs(x = 'Difficulty Score', y = 'Percentage of Party (%)') +
+  scale_fill_manual(values = c('Democrat' = 'blue', 'Republican' = 'red')) +
+  scale_x_discrete(labels = votehard_label)
+```
+
+Figure 1 shows a heavy tail where a vast majority of both Democrats and Republicans did not think that voting was difficult at all (`r percent_democrats_not_difficult`% and `r percent_republicans_not_difficult`%, respectively). We also do observe that a higher percent of Democrats responded to the “more difficult” option than Republicans did. Ultimately, the Wilcoxon Rank-Sum test concludes that we can reject our null hypothesis that the probabilities are not equal; however, the limitations of the test cannot conclude which probability is more likely to occur and the result is restricted to the sample set of surveyees, meaning that we cannot apply these results directly to the U.S. population.
+
+# Discussion
+
+The study concludes that we can reject the null hypothesis: the probability that Democratic voters find voting more difficult than Republican voters is not equal to the probability that Republican voters find voting more difficult than Democratic voters. Again, this analysis does not delineate which party has a higher probability and does not represent the population as a whole. Understanding these two restrictions can allow us to develop future studies to clarify the answer further.
+
+For example, we can utilize the 10 different `vharder` categories, which is a series of questions where surveyees can select whether they found a specific reason that made it difficult to vote or not. Upon initial investigation with Figure 2, we can conclude that for each of the categories, a higher percentage of Democratic voters responded than Republican voters. There is opportunity to conduct more statistical tests (e.g. a two-proportion test) to see if there are any significant differences between each of the groups of data.
+
+```{r Plot Reasons for Difficulty by Party Bar Chart Calculations, include=FALSE}
+
+# creates a long form pivot table to get each vharder column into separate rows
+party_data_long <- party_data %>% 
+  pivot_longer(cols = c('vharder_0','vharder_1','vharder_2','vharder_3','vharder_4',
+                        'vharder_5','vharder_6','vharder_7','vharder_8','vharder_9',
+                        'vharder_10'), 
+               names_to = "vharder",values_to = "vharder_response")
+
+# only give the data where someone responded to a vharder question
+vharder_filtered <- party_data_long %>%
+  filter(vharder_response == 1)
+
+# count the number of people who voted for each of the vharder categories and then calculate the percentage of the party that selected that vharder option using the total_count calculated above
+count_vharder <- vharder_filtered %>%
+  group_by(vharder,party) %>%
+  summarise(count_vharder = n(), .groups = 'drop_last') %>%
+  left_join(total_count,by='party') %>%
+  mutate(percentage_vharder=count_vharder/count * 100)
+
+# create labels to classify the vharder categories
+vharder_label <- c(
+  'vharder_0' = 'Registration',
+  'vharder_1' = 'Wait Time',
+  'vharder_2' = 'Identification Card',
+  'vharder_3' = 'Voting Machine',
+  'vharder_4' = 'Polling Place Location',
+  'vharder_5' = 'Commute to Polling Place',
+  'vharder_6' = 'Transportation Cost',
+  'vharder_7' = 'Work Schedule',
+  'vharder_8' = 'Weather',
+  'vharder_9' = 'Absentee Ballot',
+  'vharder_10' = 'No Postage'
+)
+```
+
+```{r Plot Reasons for Difficulty by Party Bar Chart, fig.cap='Reason for Difficulty Voting by Political Party', fig.width=8, fig.height=3}
+# create a bar plot for each of the reasons and split by party
+# using a percentage of the party because the number of democrats is greater than the number of republican
+ggplot(count_vharder) +
+  aes(x=vharder, y=percentage_vharder, fill=party) +
+  geom_bar(stat='identity',position='dodge') +
+  labs(x='Reason for Difficulty Voting',y='Percentage of Party (%)') +
+  scale_fill_manual(values = c('Democrat' = 'blue','Republican'='red')) +
+  theme(axis.text.x = element_text(angle = 30,vjust=1,hjust=1)) +
+  scale_x_discrete(labels = vharder_label)
+```
+
+Furthermore, we can get a better understanding of the population at large by conducting the same Wilcoxon Rank-Sum test but utilizing the weights that ANES provides to help gain a better inference on the population's differences to voting difficulty. Both of these studies are outside of the scope of our analysis, but provide a framework to further understand voter turnout.
