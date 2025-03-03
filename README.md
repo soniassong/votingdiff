@@ -79,4 +79,4 @@ Hartig, H., Daniller, A., Keeter, S., & Green, T. V. (2023, July 12). Voter turn
 
 American National Election Studies (ANES). (2022). ANES 2022 Pilot Study.
 
-This report is completed as part of a final project for a Berkeley class called Statistics for Data Science. If you would like to learn more, please check out UC Berkeley master's programs.
+This report is completed as part of a collaboration project for a Berkeley class called Statistics for Data Science. If you would like to learn more, please check out UC Berkeley master's programs.
