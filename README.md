@@ -74,7 +74,7 @@ The study found evidence that the probability of Democrats experiencing more dif
    install.packages(c("ggplot2", "dplyr", "tidyverse", "tidyr", "knitr", "kableExtra"))
 Load the dataset and run the provided R code to reproduce the analysis.
 
-References
+### References
 Hartig, H., Daniller, A., Keeter, S., & Green, T. V. (2023, July 12). Voter turnout, 2018-2022. Pew Research Center.
 
 American National Election Studies (ANES). (2022). ANES 2022 Pilot Study.
